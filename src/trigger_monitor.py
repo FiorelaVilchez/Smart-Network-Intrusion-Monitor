@@ -73,29 +73,30 @@ def evaluate_triggers(
     anomaly_score: float,
     ground_truth_label: str,
     last_retrain_time: float,
-    alerts_since_last_retrain: int
+    alerts_since_last_retrain: int,
+    already_triggered_attack_types: set,
 ) -> tuple[bool, str, str]:
     """
     Evalúa los 4 disparadores. Retorna (should_trigger, reason_code, human_reason).
     """
     current_time = time.time()
-    
+
     # a) Intervalo de tiempo
     if (current_time - last_retrain_time) >= 180:
         return True, "time_interval", "Ya pasó el tiempo programado (3 minutos)."
-        
+
     # b) Conteo de alertas
     if alerts_since_last_retrain >= 15:
         return True, "alert_threshold", "Se acumularon varias alertas (>= 15)."
-        
-    # c) Ataque nuevo no visto
+
+    # c) Ataque nuevo no visto (solo la primera vez que aparece ese tipo en la sesión)
     known_types = load_known_attack_types()
-    if ground_truth_label not in known_types:
+    if ground_truth_label not in known_types and ground_truth_label not in already_triggered_attack_types:
         return True, "new_attack_type", f"Apareció un tipo de ataque que el sistema no conocía: '{ground_truth_label}'."
-        
+
     # d) Severidad extrema
     extreme_threshold = load_extreme_severity_threshold()
     if anomaly_score > extreme_threshold:
         return True, "extreme_severity", f"Se detectó un ataque muy grave (score={anomaly_score:.2f}, umbral={extreme_threshold:.2f})."
-        
+
     return False, "", ""

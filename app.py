@@ -139,6 +139,8 @@ if "alerts_since_last_retrain" not in st.session_state:
     st.session_state.alerts_since_last_retrain = 0
 if "retrain_history" not in st.session_state:
     st.session_state.retrain_history = []
+if "already_triggered_attack_types" not in st.session_state:
+    st.session_state.already_triggered_attack_types = set()
 
 # ---------------------------------------------------------------------------
 # ─────────────────────────────── SIDEBAR ──────────────────────────────────
@@ -482,15 +484,24 @@ if st.session_state.sim_running:
                 anomaly_score=record["anomaly_score"],
                 ground_truth_label=record["ground_truth"],
                 last_retrain_time=st.session_state.last_retrain_timestamp,
-                alerts_since_last_retrain=st.session_state.alerts_since_last_retrain
+                alerts_since_last_retrain=st.session_state.alerts_since_last_retrain,
+                already_triggered_attack_types=st.session_state.already_triggered_attack_types
             )
             
             if should_trigger:
+                # Si el trigger fue por un tipo de ataque nuevo, lo registramos
+                # inmediatamente para que no vuelva a disparar por el mismo tipo
+                # durante el resto de la sesión (evita el bucle de reentrenamiento).
+                if reason_code == "new_attack_type":
+                    st.session_state.already_triggered_attack_types.add(record["ground_truth"])
+
                 st.toast(f"🔄 Reentrenamiento automático disparado — Motivo: {reason_msg}", icon="🔄")
                 
                 # Sincronous retraining
+                # sample_size reducido de 10000 a 3000 para no saturar la memoria
+                # limitada del contenedor en Render (512MB RAM / 0.1 CPU free tier).
                 with st.spinner(f"Reentrenando modelo... ({reason_msg})"):
-                    res = run_retraining(trigger_reason=reason_code, force_promote=False, sample_size=10000)
+                    res = run_retraining(trigger_reason=reason_code, force_promote=False, sample_size=3000)
                 
                 # Reset counters unconditionally
                 st.session_state.last_retrain_timestamp = time.time()

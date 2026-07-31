@@ -17,7 +17,8 @@ def test_evaluate_triggers_no_trigger(mock_thresholds):
         anomaly_score=0.2,
         ground_truth_label="normal",
         last_retrain_time=now - 100,  # pasaron 100s, no 180
-        alerts_since_last_retrain=5
+        alerts_since_last_retrain=5,
+        already_triggered_attack_types=set()
     )
     assert trigger is False
     assert code == ""
@@ -30,7 +31,8 @@ def test_evaluate_triggers_time_interval(mock_thresholds):
         anomaly_score=0.2,
         ground_truth_label="normal",
         last_retrain_time=now - 200,  # pasaron 200s (>=180)
-        alerts_since_last_retrain=5
+        alerts_since_last_retrain=5,
+        already_triggered_attack_types=set()
     )
     assert trigger is True
     assert code == "time_interval"
@@ -44,7 +46,8 @@ def test_evaluate_triggers_alert_threshold(mock_thresholds):
         anomaly_score=0.2,
         ground_truth_label="neptune",
         last_retrain_time=now - 10,
-        alerts_since_last_retrain=15  # >= 15
+        alerts_since_last_retrain=15,  # >= 15
+        already_triggered_attack_types=set()
     )
     assert trigger is True
     assert code == "alert_threshold"
@@ -58,7 +61,8 @@ def test_evaluate_triggers_new_attack_type(mock_thresholds):
         anomaly_score=0.2,
         ground_truth_label="processtable",  # No está en el mock {"normal", "neptune", "smurf"}
         last_retrain_time=now - 10,
-        alerts_since_last_retrain=5
+        alerts_since_last_retrain=5,
+        already_triggered_attack_types=set()
     )
     assert trigger is True
     assert code == "new_attack_type"
@@ -72,8 +76,21 @@ def test_evaluate_triggers_extreme_severity(mock_thresholds):
         anomaly_score=0.85,  # > 0.75
         ground_truth_label="neptune",
         last_retrain_time=now - 10,
-        alerts_since_last_retrain=5
+        alerts_since_last_retrain=5,
+        already_triggered_attack_types=set()
     )
     assert trigger is True
     assert code == "extreme_severity"
     assert "score=0.85" in msg
+
+def test_evaluate_triggers_deduplicates_attack_type():
+    """Un mismo tipo de ataque no debe disparar el trigger dos veces en la misma sesión."""
+    should_trigger, reason_code, _ = evaluate_triggers(
+        is_anomaly=True,
+        anomaly_score=0.1,  # bajo, para no disparar por severidad extrema
+        ground_truth_label="neptune",
+        last_retrain_time=time.time() - 10,  # reciente, para no disparar por time_interval
+        alerts_since_last_retrain=0,  # bajo, para no disparar por conteo de alertas
+        already_triggered_attack_types={"neptune"}  # ya fue disparado antes
+    )
+    assert should_trigger is False
