@@ -1,0 +1,6 @@
+{
+  "contamination": 0.05,
+  "max_features": 0.7,
+  "max_samples": 0.5,
+  "n_estimators": 100
+}

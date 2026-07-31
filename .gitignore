@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# Build / distribution
+dist/
+build/
+*.egg-info/
+
+# Streamlit cache
+.streamlit/
+
+# NOTE: data/traffic_log.db is intentionally NOT excluded here.
+# It stores processed traffic records and must persist across deployments
+# to serve as a retraining dataset in future iterations.
