@@ -122,6 +122,25 @@ Open [http://localhost:7860](http://localhost:7860).
 
 ---
 
+## 🔄 Mantenimiento e Integración Continua (CI/CD)
+
+El proyecto cuenta con pipelines automatizados configurados a través de GitHub Actions para asegurar la calidad y mejorar el modelo de forma continua.
+
+### 1. Integración Continua (CI)
+Cada vez que se realiza un `push` o un `pull_request` a la rama `main`, se ejecuta el workflow `ci.yml`:
+- **Pruebas Automatizadas:** Se ejecutan tests unitarios (con `pytest`) para validar que la lógica de preprocesamiento, carga de modelos y reglas de reentrenamiento operen correctamente.
+- **Healthcheck:** La aplicación Streamlit se inicializa en background y se realiza un request de verificación, garantizando que el dashboard no arroje errores fatales al arrancar.
+
+### 2. Mantenimiento y Reentrenamiento (CD)
+El mantenimiento del modelo está orquestado en `retrain.yml`, el cual corre diariamente a las 3:00 AM UTC o de forma manual. Este proceso llama al script `src/retrain.py`:
+- **Extracción de datos:** Obtiene los registros históricos desde `data/traffic_log.db` (tráfico de producción simulado).
+- **Entrenamiento Híbrido:** Combina estos registros con una muestra del dataset original (`KDDTrain+.txt`) y reentrena un nuevo Isolation Forest.
+- **Validación Automática:** Compara el `f1_score` del nuevo modelo con el del modelo actual (`models/metrics.json`). Si el nuevo modelo es mejor o no empeora más de `0.01`, se promociona.
+- **Registro:** Se anota la decisión en `models/model_registry.json`. Puedes revisar este archivo para auditar todo el historial y las decisiones (rechazos y promociones).
+- **Despliegue Continuo a Render:** Si el modelo es promovido, el workflow hace commit y push de los nuevos artefactos de modelo a la rama `main`. Dado que el proyecto está conectado a Render con Auto-Deploy, Render detectará el push automáticamente y redesplegará el servicio en producción usando los nuevos artefactos **sin necesidad de intervención manual o secretos de despliegue extra**.
+
+---
+
 ## 📊 Model reference metrics (NSL-KDD test set)
 
 | Metric | Value |

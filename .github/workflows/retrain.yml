@@ -1,0 +1,65 @@
+name: Scheduled Retraining
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Todos los días a las 3am UTC
+  workflow_dispatch:      # Permite ejecución manual
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    
+    # Necesitamos permisos para hacer push al repositorio
+    permissions:
+      contents: write
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Run retraining pipeline
+        env:
+          PYTHONPATH: .
+        run: |
+          python src/retrain.py
+          
+      - name: Check promotion status and commit
+        run: |
+          # Leer el estado de retrain_status.json
+          PROMOTED=$(python -c "import json; print(json.load(open('retrain_status.json'))['promoted'])")
+          NEW_F1=$(python -c "import json; print(json.load(open('retrain_status.json'))['new_f1'])")
+          
+          if [ "$PROMOTED" = "True" ]; then
+            echo "El modelo fue promovido (F1: $NEW_F1). Preparando commit..."
+            
+            # Configurar git
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            
+            # Extraer nueva versión del registro para el mensaje del commit
+            VERSION=$(python -c "import json; print(json.load(open('models/model_registry.json'))[-1]['version'])")
+            
+            # Agregar archivos modificados en models/
+            git add models/model.pkl models/scaler.pkl models/metrics.json models/model_registry.json
+            
+            # Hacer commit con tag [skip ci] para no triggerear el workflow de CI innecesariamente
+            git commit -m "chore: auto-retrain model v$VERSION, f1=$(printf '%.4f' $NEW_F1) [skip ci]"
+            
+            # Push usando el token embebido
+            git push
+            
+            echo "Push exitoso. Render detectará el cambio y hará el redeploy automáticamente."
+          else
+            echo "El modelo NO fue promovido. Terminando exitosamente sin hacer commit."
+          fi
