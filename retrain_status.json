@@ -1,6 +1,0 @@
-{
-  "promoted": false,
-  "reason": "New F1 (0.3636) is worse than current F1 (0.8187) by more than 0.01",
-  "new_f1": 0.36363636363636365,
-  "current_f1": 0.8187134502923976
-}

@@ -124,12 +124,21 @@ from src.ui_components import (
     render_anomaly_chart,
     render_score_distribution,
 )
+from src.trigger_monitor import evaluate_triggers
+from src.retrain import run_retraining
 
 # ---------------------------------------------------------------------------
 # Initialisation (runs every rerun, but idempotent)
 # ---------------------------------------------------------------------------
 init_db()
 init_simulator()
+
+if "last_retrain_timestamp" not in st.session_state:
+    st.session_state.last_retrain_timestamp = time.time()
+if "alerts_since_last_retrain" not in st.session_state:
+    st.session_state.alerts_since_last_retrain = 0
+if "retrain_history" not in st.session_state:
+    st.session_state.retrain_history = []
 
 # ---------------------------------------------------------------------------
 # ─────────────────────────────── SIDEBAR ──────────────────────────────────
@@ -375,6 +384,24 @@ with tab_about:
     st.dataframe(reg_df, use_container_width=True, hide_index=True)
 
     st.divider()
+    st.markdown("### ⚡ Reentrenamiento Reactivo (En Vivo)")
+    st.markdown("El sistema cuenta con un mecanismo reactivo que evalúa cada paquete en vivo para decidir si se necesita reentrenar inmediatamente, además del reentrenamiento diario programado.")
+    
+    col_rt1, col_rt2 = st.columns(2)
+    with col_rt1:
+        elapsed_retrain = int(time.time() - st.session_state.last_retrain_timestamp)
+        st.metric("Tiempo desde último reentrenamiento", f"{elapsed_retrain} s", help="Se dispara a los 180s")
+    with col_rt2:
+        st.metric("Alertas desde último reentrenamiento", st.session_state.alerts_since_last_retrain, help="Se dispara a las 15 alertas")
+        
+    st.markdown("#### Historial de Reentrenamientos en Sesión")
+    if st.session_state.retrain_history:
+        rh_df = pd.DataFrame(st.session_state.retrain_history)
+        st.dataframe(rh_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No se ha disparado ningún reentrenamiento reactivo en esta sesión.")
+
+    st.divider()
     st.markdown("""
         #### 🏗️ Arquitectura del pipeline
 
@@ -445,6 +472,39 @@ if st.session_state.sim_running:
 
             # Persist to SQLite
             insert_record(ts, record["ground_truth"], prediction, raw_row)
+            
+            # Evaluate Reactive Retraining Triggers
+            if prediction["is_anomaly"]:
+                st.session_state.alerts_since_last_retrain += 1
+                
+            should_trigger, reason_code, reason_msg = evaluate_triggers(
+                is_anomaly=prediction["is_anomaly"],
+                anomaly_score=record["anomaly_score"],
+                ground_truth_label=record["ground_truth"],
+                last_retrain_time=st.session_state.last_retrain_timestamp,
+                alerts_since_last_retrain=st.session_state.alerts_since_last_retrain
+            )
+            
+            if should_trigger:
+                st.toast(f"🔄 Reentrenamiento automático disparado — Motivo: {reason_msg}", icon="🔄")
+                
+                # Sincronous retraining
+                with st.spinner(f"Reentrenando modelo... ({reason_msg})"):
+                    res = run_retraining(trigger_reason=reason_code, force_promote=False, sample_size=10000)
+                
+                # Reset counters unconditionally
+                st.session_state.last_retrain_timestamp = time.time()
+                st.session_state.alerts_since_last_retrain = 0
+                
+                st.session_state.retrain_history.insert(0, {
+                    "Timestamp": datetime.datetime.now().isoformat(timespec="seconds").replace("T", " "),
+                    "Motivo": reason_msg,
+                    "Promovido": "✅ Sí" if res["promoted"] else "❌ No",
+                    "F1 Nuevo": f"{res['new_f1']:.4f}",
+                    "F1 Anterior": f"{res['current_f1']:.4f}"
+                })
+                if len(st.session_state.retrain_history) > 5:
+                    st.session_state.retrain_history = st.session_state.retrain_history[:5]
 
         # Sleep for the configured delay, then trigger a rerun
         time.sleep(speed)

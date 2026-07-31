@@ -89,18 +89,13 @@ def prepare_features(df: pd.DataFrame, fit_scaler: bool = False, scaler: Standar
         X_scaled = scaler.transform(X)
         return X_scaled
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--force-promote", action="store_true", help="Promote even if metrics are worse")
-    parser.add_argument("--sample-size", type=int, default=10000, help="Number of rows to sample from original train data")
-    args = parser.parse_args()
-
-    print("Starting retraining pipeline...")
+def run_retraining(trigger_reason: str, force_promote: bool = False, sample_size: int = 10000) -> dict:
+    print(f"Starting retraining pipeline... (Trigger: {trigger_reason})")
     download_data_if_needed()
 
     # 1. Load original training data (sample)
     df_train = pd.read_csv(TRAIN_DATA_PATH, header=None, names=COLUMN_NAMES)
-    df_train_sample = df_train.sample(n=min(args.sample_size, len(df_train)), random_state=42).copy()
+    df_train_sample = df_train.sample(n=min(sample_size, len(df_train)), random_state=42).copy()
     
     # The IsolationForest considers -1 as anomaly. We define "normal" as 1, "anomaly" as -1 for training.
     # Actually, IsolationForest doesn't need labels for training, but we need them for evaluation.
@@ -184,10 +179,10 @@ def main():
     promoted = False
     reason = ""
 
-    if new_f1 >= (current_f1 - tolerance) or args.force_promote:
+    if new_f1 >= (current_f1 - tolerance) or force_promote:
         promoted = True
         reason = f"New F1 ({new_f1:.4f}) is within tolerance of current F1 ({current_f1:.4f})"
-        if args.force_promote:
+        if force_promote:
             reason = "Force promoted via CLI"
     else:
         reason = f"New F1 ({new_f1:.4f}) is worse than current F1 ({current_f1:.4f}) by more than {tolerance}"
@@ -207,7 +202,8 @@ def main():
         "metrics": new_metrics,
         "training_samples": len(df_combined),
         "status": "production" if promoted else "rejected",
-        "reason": reason
+        "reason": reason,
+        "trigger_reason": trigger_reason
     }
     registry.append(new_entry)
     
@@ -230,11 +226,21 @@ def main():
         "promoted": promoted,
         "reason": reason,
         "new_f1": new_f1,
-        "current_f1": current_f1
+        "current_f1": current_f1,
+        "trigger_reason": trigger_reason
     }
     with open(STATUS_PATH, "w") as f:
         json.dump(status, f, indent=2)
     print(f"Wrote status to {STATUS_PATH}")
+    return status
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--force-promote", action="store_true", help="Promote even if metrics are worse")
+    parser.add_argument("--sample-size", type=int, default=10000, help="Number of rows to sample from original train data")
+    args = parser.parse_args()
+    
+    run_retraining(trigger_reason="scheduled_cron", force_promote=args.force_promote, sample_size=args.sample_size)
 
 if __name__ == "__main__":
     main()
