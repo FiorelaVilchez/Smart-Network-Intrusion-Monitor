@@ -35,8 +35,10 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:7860/_stcore/health || exit 1
 
 # Run Streamlit
-CMD ["streamlit", "run", "app.py", \
-     "--server.port=7860", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--browser.gatherUsageStats=false"]
+#CMD ["streamlit", "run", "app.py", \
+#     "--server.port=7860", \
+#     "--server.address=0.0.0.0", \
+#     "--server.headless=true", \
+#     "--browser.gatherUsageStats=false"]
+
+CMD streamlit run app.py --server.address=0.0.0.0 --server.port=${PORT:-7860} --server.headless=true --browser.gatherUsageStats=false
